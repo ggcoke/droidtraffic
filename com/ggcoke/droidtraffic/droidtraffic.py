@@ -483,8 +483,6 @@ class PackageTrafficListener(TrafficStatListener):
                 print "Pid: %s, package: %s" % (str(result_list[1]), str(result_list[-1]))
 
 if __name__ == "__main__":
-    # print get_interface()
-    # print get_current_interface_ip()
     try:
         set_win()
         show_result(None)
