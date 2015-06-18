@@ -12,7 +12,10 @@ PACKAGE_NAME_WITHOUT_INODE = "package_without_inode"
 
 TRAFFIC_DEBUG = False
 
-stdscr = curses.initscr()
+USING_CURSES = False
+
+if (USING_CURSES == True) :
+    stdscr = curses.initscr()
 
 ## Display output as table
 def set_win():
@@ -293,6 +296,7 @@ class PackageTrafficListener(TrafficStatListener):
     _dict_tcp_package = {}
     _dict_tcp_package_without_inode = {}
     _dict_package_uid = {}
+    _dict_remote_package = {}
 
     _first = True
 
@@ -354,19 +358,21 @@ class PackageTrafficListener(TrafficStatListener):
         self.show_current_traffic()
 
     def show_current_traffic(self):
-        show_result(self._dict_package_traffic_info)
-        # if (self._dict_package_traffic_info == None or len(self._dict_package_traffic_info) == 0):
-        #     print("No traffic available yet.")
-        #     return
-        # print("\r\n" + "Package".center(50) + "Data Send".center(20) + "Data Recv".center(20) + "Data Total".center(20) + "Remoute Server")
-        # for (package_name, traffic_info) in self._dict_package_traffic_info.iteritems():
-        #     print "%s%s%s%s%s" % (
-        #         package_name.center(50),
-        #         str(traffic_info.traffic_send).center(20),
-        #         str(traffic_info.traffic_recv).center(20),
-        #         str(traffic_info.traffic_send + traffic_info.traffic_recv).center(20),
-        #         str(traffic_info.remote_server)
-        #     )
+        if (USING_CURSES == True) :
+            show_result(self._dict_package_traffic_info)
+        else:
+            if (self._dict_package_traffic_info == None or len(self._dict_package_traffic_info) == 0):
+                print("No traffic available yet.")
+                return
+            print("\r\n" + "Package".center(50) + "Data Send".center(20) + "Data Recv".center(20) + "Data Total".center(20) + "Remoute Server")
+            for (package_name, traffic_info) in self._dict_package_traffic_info.iteritems():
+                print "%s%s%s%s%s" % (
+                    package_name.center(50),
+                    str(traffic_info.traffic_send).center(20),
+                    str(traffic_info.traffic_recv).center(20),
+                    str(traffic_info.traffic_send + traffic_info.traffic_recv).center(20),
+                    str(traffic_info.remote_server)
+                )
 
     def __init_dicts_(self):
         self.__reset_tcp_package_dicts()
@@ -377,6 +383,7 @@ class PackageTrafficListener(TrafficStatListener):
         self._dict_pid_package.clear()
         self._dict_tcp_package.clear()
         self._dict_package_uid.clear()
+        self._dict_remote_package.clear()
 
     def __find_package_from_tcp_package(self, tcp_key):
         if (tcp_key == None):
@@ -434,26 +441,40 @@ class PackageTrafficListener(TrafficStatListener):
             if (int(t.traffic_inode) == 0):
                 if (TRAFFIC_DEBUG):
                     print "traffic inode is 0 for key " + tcp_key + ", traffic is " + str(t)
-                if (self._dict_tcp_package.has_key(tcp_key) == False):
-                    self._dict_tcp_package_without_inode[tcp_key] = PACKAGE_NAME_WITHOUT_INODE
-                    self._dict_package_uid[PACKAGE_NAME_WITHOUT_INODE] = t.traffic_uid
+
+                remote_key = tcp_key.split("_")[1]
+                if (self._dict_remote_package.has_key(remote_key) == True):
+                    package_name = self._dict_remote_package[remote_key]
+                    self.__build_package_map(t, tcp_key, package_name)
+                else:
+                    if (self._dict_tcp_package.has_key(tcp_key) == False):
+                        self._dict_tcp_package_without_inode[tcp_key] = PACKAGE_NAME_WITHOUT_INODE
+                        self._dict_package_uid[PACKAGE_NAME_WITHOUT_INODE] = t.traffic_uid
                 continue
 
             if (self._dict_inode_pid.has_key(t.traffic_inode) == False):
-                # print 'No such inode for tcp record: ' + str(t)
+                if (USING_CURSES == False) :
+                    print 'No such inode for tcp record: ' + str(t)
                 continue
             pid = self._dict_inode_pid.get(t.traffic_inode)
             if (self._dict_pid_package.has_key(pid) == False):
-                # print "No such process has pid " + pid + " for tpc record: " + str(t)
+                if (USING_CURSES == False) :
+                    print "No such process has pid " + pid + " for tpc record: " + str(t)
                 continue
             package_name = self._dict_pid_package.get(pid)
 
-            # print 'Find tcp key: ' + tcp_key + ", package is " + package_name
-            self._dict_tcp_package[tcp_key] = package_name
-            self._dict_package_uid[package_name] = t.traffic_uid
+            self.__build_package_map(t, tcp_key, package_name)
 
-            if (self._dict_tcp_package_without_inode.has_key(tcp_key) == True):
-                del self._dict_tcp_package_without_inode[tcp_key]
+    def __build_package_map(self, tcp_package, tcp_key, package_name):
+        remote_key = tcp_key.split("_")[1]
+        self._dict_tcp_package[tcp_key] = package_name
+        if (tcp_package.traffic_uid != 0) :
+            self._dict_package_uid[package_name] = tcp_package.traffic_uid
+
+        if (self._dict_tcp_package_without_inode.has_key(tcp_key) == True):
+            del self._dict_tcp_package_without_inode[tcp_key]
+
+        self._dict_remote_package[remote_key] = package_name
 
     def __build_tcp_key(self, tcp_package):
         return "%s_%s:%s" % (tcp_package.local_port, tcp_package.remote_ip, tcp_package.remote_port)
@@ -469,8 +490,8 @@ class PackageTrafficListener(TrafficStatListener):
             if (match == None):
                 continue
             self._dict_inode_pid[match.group(1)] = result_list[1]
-            if (TRAFFIC_DEBUG):
-                print "Inode: %s, pid: %s" % (str(match.group(1)), str(result_list[1]))
+            # if (TRAFFIC_DEBUG):
+            #     print "Inode: %s, pid: %s" % (str(match.group(1)), str(result_list[1]))
 
     def __fetch_pid_list(self):
         p = Popen('adb shell ps', stdout=PIPE,
@@ -486,8 +507,9 @@ if __name__ == "__main__":
     # print get_interface()
     # print get_current_interface_ip()
     try:
-        set_win()
-        show_result(None)
+        if (USING_CURSES == True):
+            set_win()
+            show_result(None)
         tdw = TcpDumpWraper()
         # tdw.register(TrafficStatListener())
         tdw.register(PackageTrafficListener())
