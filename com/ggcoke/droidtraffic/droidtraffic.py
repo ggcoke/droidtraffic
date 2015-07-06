@@ -72,6 +72,10 @@ def exec_adb_shell(cmd):
     proc = subprocess.Popen(["adb", "shell", cmd], stdout=subprocess.PIPE, shell=False)
     return proc.communicate()
 
+def is_mtk_platform():
+    out,err = exec_adb_shell("getprop")
+    return out.find("mediatek")>=0
+
 def get_interface():
     IGNORE_INTERFACES = ('lo', 'p2p0')
     out, err = exec_adb_shell("cat /proc/net/if_inet6")
@@ -91,6 +95,8 @@ def get_interface():
         if ignore:
             continue
         return interface
+    if is_mtk_platform():
+       return "ccmni0" 
     return None
 
 def get_current_interface_ip():
@@ -190,7 +196,10 @@ class TcpDumpWraper(Singleton):
             print "Network device is not ready!"
             sys.exit(1)
         self.local_ip = interface_ip[1]
-        cmd = "tcpdump -i %s -nn tcp" % interface_ip[0]
+        if is_mtk_platform():
+            cmd = "tcpdump -i any -nn tcp"
+        else:
+            cmd = "tcpdump -i %s -nn tcp" % interface_ip[0]
         p = subprocess.Popen(["adb", "shell", cmd], stdout=subprocess.PIPE, shell=False)
         while True:
             line = p.stdout.readline()
